@@ -5,7 +5,6 @@ from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models.base import Model
 from django.db.models.query import QuerySet
-from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -209,7 +208,7 @@ class CommentDeleteView(
     def get_object(self, queryset=Comment.objects.all()) -> Model:
         queryset = queryset.filter(post_id=self.kwargs.get('post_id'))
         return super().get_object(queryset)
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.pop('form')
