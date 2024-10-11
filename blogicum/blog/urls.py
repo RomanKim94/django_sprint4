@@ -31,12 +31,12 @@ urlpatterns = [
         name='post_detail',
     ),
     path(
-        'posts/edit/<int:post_id>/',
+        'posts/<int:post_id>/edit/',
         views.PostEditView.as_view(),
         name='edit_post',
     ),
     path(
-        'posts/delete/<int:post_id>/',
+        'posts/<int:post_id>/delete/',
         views.PostDeleteView.as_view(),
         name='delete_post',
     ),
