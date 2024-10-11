@@ -93,16 +93,11 @@ class PostListView(FilterAnnotateOrderPostsMixin, ListView):
 
 
 class PostDetailView(
-    LoginRequiredMixin, PostObjectMixin,
+    PostObjectMixin,
     FilterAnnotateOrderPostsMixin, DetailView,
 ):
     template_name = 'blog/detail.html'
     pk_url_kwarg = 'post_id'
-
-    def dispatch(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('blog:post_detail', post_id=kwargs.get('post_id'))
-        return super().dispatch(request, *args, **kwargs)
 
     def get_object(self, queryset=Post.objects.all()) -> Model:
         return super().get_object(
@@ -128,10 +123,10 @@ class PostEditView(
     template_name = 'blog/create.html'
     form_class = PostForm
 
-    def form_valid(self, form):
-        if self.request.user != form.instance.author:
-            return redirect('blog:detail')
-        return super().form_valid(form)
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('blog:post_detail', post_id=kwargs.get('post_id'))
+        return super().dispatch(request, *args, **kwargs)
 
     def get_object(self, queryset=Post.objects.all()) -> Model:
         return super().get_object(
