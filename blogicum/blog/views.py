@@ -5,7 +5,7 @@ from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models.base import Model
 from django.db.models.query import QuerySet
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
     CreateView, DeleteView, DetailView, UpdateView, ListView,
@@ -99,6 +99,11 @@ class PostDetailView(
     template_name = 'blog/detail.html'
     pk_url_kwarg = 'post_id'
 
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('blog:post_detail', post_id=kwargs.get('post_id'))
+        return super().dispatch(request, *args, **kwargs)
+
     def get_object(self, queryset=Post.objects.all()) -> Model:
         return super().get_object(
             self.get_filtered_related_posts(
@@ -122,6 +127,11 @@ class PostEditView(
     pk_url_kwarg = 'post_id'
     template_name = 'blog/create.html'
     form_class = PostForm
+
+    def form_valid(self, form):
+        if self.request.user != form.instance.author:
+            return redirect('blog:detail')
+        return super().form_valid(form)
 
     def get_object(self, queryset=Post.objects.all()) -> Model:
         return super().get_object(
