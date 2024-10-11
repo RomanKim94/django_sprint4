@@ -5,6 +5,7 @@ from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models.base import Model
 from django.db.models.query import QuerySet
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -115,7 +116,7 @@ class PostDetailView(
 
 
 class PostEditView(
-    OnlyAuthorMixin, ReverseToPostDetailMixin,
+    ReverseToPostDetailMixin,
     FilterAnnotateOrderPostsMixin, UpdateView,
 ):
     model = Post
@@ -123,18 +124,25 @@ class PostEditView(
     template_name = 'blog/create.html'
     form_class = PostForm
 
-    def dispatch(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return redirect('blog:post_detail', post_id=kwargs.get('post_id'))
-        return super().dispatch(request, *args, **kwargs)
+        return super().post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        post = form.instance
+        if self.request.user != post.author:
+            return redirect('blog:post_detail', post_id=post.pk)
+        return super().form_valid(form)
 
     def get_object(self, queryset=Post.objects.all()) -> Model:
-        return super().get_object(
+        post = super().get_object(
             self.get_filtered_related_posts(
                 queryset,
                 author_access_flag=True,
-            ).order_by('created_at')
+            )
         )
+        return post
 
 
 class PostDeleteView(
@@ -146,12 +154,13 @@ class PostDeleteView(
     success_url = reverse_lazy('blog:index')
 
     def get_object(self, queryset=Post.objects.all()) -> Model:
-        return super().get_object(
+        post = super().get_object(
             self.get_filtered_related_posts(
                 queryset,
                 author_access_flag=True,
             )
         )
+        return post
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
@@ -200,6 +209,11 @@ class CommentDeleteView(
     def get_object(self, queryset=Comment.objects.all()) -> Model:
         queryset = queryset.filter(post_id=self.kwargs.get('post_id'))
         return super().get_object(queryset)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.pop('form')
+        return context
 
 
 class CategoryDetailView(FilterAnnotateOrderPostsMixin, DetailView):
