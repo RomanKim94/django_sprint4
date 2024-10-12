@@ -1,5 +1,5 @@
 from django.contrib.auth.mixins import UserPassesTestMixin
-from django.db.models import Q, Count
+from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic.detail import SingleObjectMixin
@@ -23,13 +23,6 @@ class OnlyUserSelfMixin(UserPassesTestMixin):
         return object == self.request.user
 
 
-class OnlyAuthorMixin(UserPassesTestMixin):
-
-    def test_func(self):
-        object = self.get_object()
-        return object.author == self.request.user
-
-
 class PostObjectMixin(SingleObjectMixin):
     model = Post
     template_name = 'blog/create.html'
@@ -50,16 +43,17 @@ class FilterAnnotateOrderPostsMixin:
         Additionally annotates with 'comment_count' fields.
         Returns posts queryset.
         """
-        filter = (
-            Q(is_published=True)
-            & Q(pub_date__lte=timezone.now())
-            & Q(category__is_published=True)
-        )
         user = self.request.user
+        user_posts = Post.objects.none()
         if author_access_flag and not user.is_anonymous:
-            filter |= Q(author=user)
+            user_posts = posts.filter(author=user)
         posts = posts.filter(
-            filter
+            is_published=True,
+            pub_date__lte=timezone.now(),
+            category__is_published=True,
+        )
+        posts = (
+            (posts | user_posts).distinct()
         ).select_related(
             'author', 'location', 'category',
         ).annotate(

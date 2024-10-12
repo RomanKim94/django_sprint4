@@ -5,6 +5,7 @@ from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models.base import Model
 from django.db.models.query import QuerySet
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -14,7 +15,7 @@ from django.views.generic import (
 from .models import Category, Comment, Post
 from .forms import CommentForm, PostForm
 from .mixins import (
-    OnlyUserSelfMixin, OnlyAuthorMixin, PostObjectMixin,
+    OnlyUserSelfMixin, PostObjectMixin,
     SetAuthorMixin, FilterAnnotateOrderPostsMixin, ReverseToPostDetailMixin,
 )
 
@@ -144,20 +145,23 @@ class PostEditView(
         return post
 
 
-class PostDeleteView(
-    OnlyAuthorMixin, FilterAnnotateOrderPostsMixin, DeleteView,
-):
+class PostDeleteView(DeleteView):
     model = Post
     pk_url_kwarg = 'post_id'
     template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
 
-    def get_object(self, queryset=Post.objects.all()) -> Model:
+    def get_queryset(self):
+        user = self.request.user
+        if user and not user.is_anonymous:
+            return super().get_queryset().filter(author=user)
+        return Post.objects.none()
+
+    def get_object(self, queryset=None):
+        if queryset is None:
+            queryset = self.get_queryset()
         post = super().get_object(
-            self.get_filtered_related_posts(
-                queryset,
-                author_access_flag=True,
-            )
+            queryset=queryset
         )
         return post
 
@@ -187,27 +191,42 @@ class CommentCreateView(
 
 
 class CommentUpdateView(
-    LoginRequiredMixin, OnlyAuthorMixin, ReverseToPostDetailMixin, UpdateView
+    LoginRequiredMixin, ReverseToPostDetailMixin, UpdateView
 ):
+    model = Comment
     form_class = CommentForm
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
-    def get_object(self, queryset=Comment.objects.all()) -> Model:
-        queryset = queryset.filter(post_id=self.kwargs.get('post_id'))
-        return super().get_object(queryset)
+    def get_queryset(self):
+        return super().get_queryset().filter(author=self.request.user)
+
+    def get_object(self, queryset=None) -> Model:
+        if queryset is None:
+            queryset = self.get_queryset()
+        comment = super().get_object(queryset=queryset)
+        if self.request.user != comment.author:
+            return self.get_success_url()
+        return comment
 
 
 class CommentDeleteView(
-    LoginRequiredMixin, OnlyAuthorMixin, ReverseToPostDetailMixin, DeleteView,
+    LoginRequiredMixin, ReverseToPostDetailMixin, DeleteView,
 ):
     model = Comment
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
-    def get_object(self, queryset=Comment.objects.all()) -> Model:
-        queryset = queryset.filter(post_id=self.kwargs.get('post_id'))
-        return super().get_object(queryset)
+    def get_queryset(self):
+        return super().get_queryset().filter(author=self.request.user)
+
+    def get_object(self, queryset=None) -> Model:
+        if queryset is None:
+            queryset = self.get_queryset()
+        comment = super().get_object(queryset=queryset)
+        if self.request.user != comment.author:
+            return self.get_success_url()
+        return comment
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
