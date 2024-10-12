@@ -5,6 +5,7 @@ from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models.base import Model
 from django.db.models.query import QuerySet
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -150,19 +151,25 @@ class PostDeleteView(DeleteView):
     template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
 
-    def get_queryset(self):
-        user = self.request.user
-        if user and not user.is_anonymous:
-            return super().get_queryset().filter(author=user)
-        return Post.objects.none()
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            self.object = Post.objects.get(pk=self.kwargs.get('post_id'))
+        except Post.DoesNotExist:
+            return render(request, 'pages/404.html', status=404)
+        return super().dispatch(request, *args, **kwargs)
 
-    def get_object(self, queryset=None):
-        if queryset is None:
-            queryset = self.get_queryset()
-        post = super().get_object(
-            queryset=queryset
-        )
-        return post
+    def post(self, request, *args, **kwargs):
+        if (
+            not request.user
+            or request.user.is_anonymous
+            or request.user != self.object.author
+        ):
+            raise Http404
+        form = self.get_form()
+        if form.is_valid():
+            return self.form_valid(form)
+        else:
+            return self.form_invalid(form)
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
@@ -204,7 +211,10 @@ class CommentUpdateView(
         if queryset is None:
             queryset = self.get_queryset()
         comment = super().get_object(queryset=queryset)
-        if self.request.user != comment.author:
+        if (
+            self.request.user.is_anonymous
+            or self.request.user != comment.author
+        ):
             return self.get_success_url()
         return comment
 
@@ -223,7 +233,10 @@ class CommentDeleteView(
         if queryset is None:
             queryset = self.get_queryset()
         comment = super().get_object(queryset=queryset)
-        if self.request.user != comment.author:
+        if (
+            self.request.user.is_anonymous
+            or self.request.user != comment.author
+        ):
             return self.get_success_url()
         return comment
 
