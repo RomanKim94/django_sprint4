@@ -194,7 +194,10 @@ class CommentUpdateView(
     template_name = 'blog/comment.html'
 
     def get_queryset(self, post=None):
-        return super().get_queryset().filter(author=self.request.user, post=post)
+        return super().get_queryset().filter(
+            author=self.request.user,
+            post=post,
+        )
 
     def get_object(self, queryset=None) -> Model:
         post = get_object_or_404(Post, id=self.kwargs.get('post_id'))
@@ -217,7 +220,10 @@ class CommentDeleteView(
     template_name = 'blog/comment.html'
 
     def get_queryset(self, post=None):
-        return super().get_queryset().filter(author=self.request.user, post=post)
+        return super().get_queryset().filter(
+            author=self.request.user,
+            post=post,
+        )
 
     def get_object(self, queryset=None) -> Model:
         post = get_object_or_404(Post, id=self.kwargs.get('post_id'))
