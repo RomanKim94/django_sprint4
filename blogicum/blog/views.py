@@ -193,6 +193,14 @@ class CommentUpdateView(
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
+    def form_valid(self, form):
+        if (
+            self.request.user.is_anonymous
+            or self.request.user != self.object.author
+        ):
+            return self.get_success_url()
+        return super().form_valid(form)
+
     def get_queryset(self, post=None):
         return super().get_queryset().filter(
             author=self.request.user,
@@ -218,6 +226,14 @@ class CommentDeleteView(
     model = Comment
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
+
+    def form_valid(self, form):
+        if (
+            self.request.user.is_anonymous
+            or self.request.user != self.object.author
+        ):
+            return self.get_success_url()
+        return super().form_valid(form)
 
     def get_queryset(self, post=None):
         return super().get_queryset().filter(
