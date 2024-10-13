@@ -6,7 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models.base import Model
 from django.db.models.query import QuerySet
 from django.http import Http404
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
     CreateView, DeleteView, DetailView, UpdateView, ListView,
@@ -151,25 +151,14 @@ class PostDeleteView(DeleteView):
     template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
 
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            self.object = Post.objects.get(pk=self.kwargs.get('post_id'))
-        except Post.DoesNotExist:
-            return render(request, 'pages/404.html', status=404)
-        return super().dispatch(request, *args, **kwargs)
-
-    def post(self, request, *args, **kwargs):
-        if (
-            not request.user
-            or request.user.is_anonymous
-            or request.user != self.object.author
-        ):
+    def get_object(self, queryset=Post.objects.all()):
+        if not self.request.user or self.request.user.is_anonymous:
             raise Http404
-        form = self.get_form()
-        if form.is_valid():
-            return self.form_valid(form)
-        else:
-            return self.form_invalid(form)
+        return get_object_or_404(
+            queryset,
+            pk=self.kwargs.get('post_id'),
+            author=self.request.user
+        )
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)

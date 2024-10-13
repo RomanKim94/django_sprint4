@@ -5,10 +5,16 @@ from django.contrib.auth.forms import UserCreationForm
 from django.urls import include, path, reverse_lazy
 from django.views.generic import CreateView
 
-from core import views
+# from core.views import (
+#     PageNotFoundTemplateView,
+#     ServerErrorTemplateView,
+# )
 
-handler404 = views.PageNotFoundTemplateView.as_view()
-handler500 = views.ServerErrorTemplateView.as_view()
+# handler404 = PageNotFoundTemplateView.as_view()
+# handler500 = ServerErrorTemplateView.as_view()
+
+handler404 = 'pages.views.page_not_found'
+handler500 = 'pages.views.server_error'
 
 urlpatterns = [
     path('admin/', admin.site.urls),
