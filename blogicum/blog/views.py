@@ -193,12 +193,13 @@ class CommentUpdateView(
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
-    def get_queryset(self):
-        return super().get_queryset().filter(author=self.request.user)
+    def get_queryset(self, post=None):
+        return super().get_queryset().filter(author=self.request.user, post=post)
 
     def get_object(self, queryset=None) -> Model:
+        post = get_object_or_404(Post, id=self.kwargs.get('post_id'))
         if queryset is None:
-            queryset = self.get_queryset()
+            queryset = self.get_queryset(post=post)
         comment = super().get_object(queryset=queryset)
         if (
             self.request.user.is_anonymous
@@ -215,12 +216,13 @@ class CommentDeleteView(
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
-    def get_queryset(self):
-        return super().get_queryset().filter(author=self.request.user)
+    def get_queryset(self, post=None):
+        return super().get_queryset().filter(author=self.request.user, post=post)
 
     def get_object(self, queryset=None) -> Model:
+        post = get_object_or_404(Post, id=self.kwargs.get('post_id'))
         if queryset is None:
-            queryset = self.get_queryset()
+            queryset = self.get_queryset(post=post)
         comment = super().get_object(queryset=queryset)
         if (
             self.request.user.is_anonymous
