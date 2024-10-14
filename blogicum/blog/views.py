@@ -193,23 +193,23 @@ class CommentUpdateView(
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
-    def get_queryset(self, post=None):
-        return super().get_queryset().filter(
-            author=self.request.user,
-            post=post,
+    def dispatch(self, request, *args, **kwargs):
+        self.comment = get_object_or_404(
+            Comment,
+            pk=self.kwargs.get('comment_id')
         )
-
-    def get_object(self, queryset=None) -> Model:
-        post = get_object_or_404(Post, id=self.kwargs.get('post_id'))
-        if queryset is None:
-            queryset = self.get_queryset(post=post)
-        comment = super().get_object(queryset=queryset)
         if (
-            self.request.user.is_anonymous
-            or self.request.user != comment.author
+            request.user.is_anonymous
+            or not request.user == self.comment.author
         ):
-            return self.get_success_url()
-        return comment
+            return redirect(
+                'blog:post_detail',
+                post_id=self.kwargs.get('post_id')
+            )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_object(self, queryset=None):
+        return self.comment
 
 
 class CommentDeleteView(
@@ -219,28 +219,23 @@ class CommentDeleteView(
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
 
-    def get_queryset(self, post=None):
-        return super().get_queryset().filter(
-            author=self.request.user,
-            post=post,
+    def dispatch(self, request, *args, **kwargs):
+        self.comment = get_object_or_404(
+            Comment,
+            pk=self.kwargs.get('comment_id')
         )
-
-    def get_object(self, queryset=None) -> Model:
-        post = get_object_or_404(Post, id=self.kwargs.get('post_id'))
-        if queryset is None:
-            queryset = self.get_queryset(post=post)
-        comment = super().get_object(queryset=queryset)
         if (
-            self.request.user.is_anonymous
-            or self.request.user != comment.author
+            request.user.is_anonymous
+            or not request.user == self.comment.author
         ):
-            return self.get_success_url()
-        return comment
+            return redirect(
+                'blog:post_detail',
+                post_id=self.kwargs.get('post_id')
+            )
+        return super().dispatch(request, *args, **kwargs)
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context.pop('form')
-        return context
+    def get_object(self, queryset=None):
+        return self.comment
 
 
 class CategoryDetailView(FilterAnnotateOrderPostsMixin, DetailView):
