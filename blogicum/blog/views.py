@@ -1,29 +1,70 @@
 from typing import Any
 
-from django.contrib.auth import get_user_model
 from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Count
 from django.db.models.base import Model
-from django.db.models.query import QuerySet
 from django.http import Http404
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.generic import (
-    CreateView, DeleteView, DetailView, UpdateView, ListView,
+    CreateView, DeleteView, DetailView, ListView, UpdateView,
 )
 
-from .models import Category, Comment, Post
 from .forms import CommentForm, PostForm
 from .mixins import (
-    OnlyUserSelfMixin, PostObjectMixin,
-    SetAuthorMixin, FilterAnnotateOrderPostsMixin, ReverseToPostDetailMixin,
+    AuthorOnlyMixin, PostObjectMixin, ProfileOwnerOnlyMixin,
+    SetAuthorMixin, ToPostDetailMixin,
 )
+from .models import Category, Comment, Post, User
 
 
-User = get_user_model()
+POSTS_COUNT_ON_PAGE = 10
 
 
-class UserDetailView(FilterAnnotateOrderPostsMixin, DetailView):
+def get_filtered_related_posts(
+    posts=Post.objects.all(),
+    is_filter_not_published=True,
+    is_select_related=True,
+    is_annotate_count=True,
+    order_by='-pub_date'
+):
+    """
+    Function filters, attaches, annotates with comment count and orders
+     if necessary.
+    """
+    if is_filter_not_published:
+        posts = posts.filter(
+            is_published=True,
+            pub_date__lte=timezone.now(),
+            category__is_published=True,
+        )
+    if is_select_related:
+        posts = posts.select_related(
+            'author', 'location', 'category',
+        )
+    if is_annotate_count:
+        posts = posts.annotate(
+            comment_count=Count('comments')
+        )
+    posts = posts.order_by(order_by)
+    return posts
+
+
+def get_related_posts_paginator_page(view, is_filter_not_published=True):
+    return Paginator(
+        get_filtered_related_posts(
+            view.object.posts,
+            is_filter_not_published=is_filter_not_published,
+        ),
+        POSTS_COUNT_ON_PAGE,
+    ).get_page(
+        view.request.GET.get('page', 1),
+    )
+
+
+class UserDetailView(DetailView):
     model = User
     template_name = 'blog/profile.html'
     slug_field = 'username'
@@ -31,27 +72,24 @@ class UserDetailView(FilterAnnotateOrderPostsMixin, DetailView):
     context_object_name = 'profile'
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        author = self.object
-        context['profile'] = author
-        paginator = Paginator(
-            self.get_filtered_related_posts(
-                author.posts,
-                author_access_flag=True,
+        return super().get_context_data(
+            profile=self.object,
+            user=self.request.user,
+            page_obj=get_related_posts_paginator_page(
+                self,
+                is_filter_not_published=not (
+                    self.request.user
+                    and self.object == self.request.user
+                ),
             ),
-            10,
+            **kwargs,
         )
-        context['page_obj'] = paginator.get_page(
-            self.request.GET.get('page', 1),
-        )
-        return context
 
 
-class UserUpdateView(LoginRequiredMixin, OnlyUserSelfMixin, UpdateView):
+class UserUpdateView(LoginRequiredMixin, ProfileOwnerOnlyMixin, UpdateView):
     model = User
     template_name = 'blog/user.html'
     slug_field = 'username'
-    slug_url_kwarg = 'username'
     fields = ('username', 'first_name', 'last_name', 'email')
 
     def get_object(self, queryset=None) -> Model:
@@ -59,16 +97,16 @@ class UserUpdateView(LoginRequiredMixin, OnlyUserSelfMixin, UpdateView):
 
     def get_success_url(self):
         return reverse(
-            'blog:profile', kwargs={
-                'username': self.request.user.username,
-            }
+            'blog:profile', args=[self.request.user.username]
         )
 
 
 class PostCreateView(
-    LoginRequiredMixin, SetAuthorMixin, PostObjectMixin, CreateView
+    LoginRequiredMixin, SetAuthorMixin,
+    PostObjectMixin, CreateView,
 ):
     form_class = PostForm
+    pk_url_kwarg = None
 
     def get_success_url(self):
         return reverse(
@@ -78,185 +116,113 @@ class PostCreateView(
         )
 
 
-class PostListView(FilterAnnotateOrderPostsMixin, ListView):
+class PostListView(ListView):
     model = Post
     template_name = 'blog/index.html'
-
-    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        context['page_obj'] = Paginator(
-            self.get_filtered_related_posts(author_access_flag=False),
-            10,
-        ).get_page(
-            self.request.GET.get('page', 1),
-        )
-        return context
+    paginate_by = POSTS_COUNT_ON_PAGE
+    queryset = get_filtered_related_posts()
 
 
-class PostDetailView(
-    PostObjectMixin,
-    FilterAnnotateOrderPostsMixin, DetailView,
-):
+class PostDetailView(LoginRequiredMixin, PostObjectMixin, DetailView):
     template_name = 'blog/detail.html'
-    pk_url_kwarg = 'post_id'
 
-    def get_object(self, queryset=Post.objects.all()) -> Model:
-        return super().get_object(
-            self.get_filtered_related_posts(
-                queryset,
-                author_access_flag=True,
+    def get_object(self) -> Model:
+        post = super().get_object(
+            get_filtered_related_posts(
+                is_filter_not_published=False,
             )
         )
+        if (
+            not post.author == self.request.user
+            and not (
+                post.is_published
+                and post.category.is_published
+                and post.pub_date <= timezone.now()
+            )
+        ):
+            raise Http404
+        return post
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        context['comments'] = self.object.comments.select_related('author')
-        context['form'] = CommentForm()
-        return context
+        return super().get_context_data(
+            comments=self.object.comments.select_related('author'),
+            form=CommentForm(),
+            **kwargs,
+        )
 
 
 class PostEditView(
-    ReverseToPostDetailMixin,
-    FilterAnnotateOrderPostsMixin, UpdateView,
+    LoginRequiredMixin, PostObjectMixin, AuthorOnlyMixin,
+    ToPostDetailMixin, UpdateView,
 ):
-    model = Post
-    pk_url_kwarg = 'post_id'
-    template_name = 'blog/create.html'
     form_class = PostForm
-
-    def post(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('blog:post_detail', post_id=kwargs.get('post_id'))
-        return super().post(request, *args, **kwargs)
-
-    def form_valid(self, form):
-        post = form.instance
-        if self.request.user != post.author:
-            return redirect('blog:post_detail', post_id=post.pk)
-        return super().form_valid(form)
-
-    def get_object(self, queryset=Post.objects.all()) -> Model:
-        post = super().get_object(
-            self.get_filtered_related_posts(
-                queryset,
-                author_access_flag=True,
-            )
-        )
-        return post
+    url_for_no_access = 'blog:post_detail'
 
 
-class PostDeleteView(DeleteView):
-    model = Post
-    pk_url_kwarg = 'post_id'
-    template_name = 'blog/create.html'
+class PostDeleteView(
+    LoginRequiredMixin, AuthorOnlyMixin,
+    PostObjectMixin, DeleteView,
+):
     success_url = reverse_lazy('blog:index')
-
-    def get_object(self, queryset=Post.objects.all()):
-        if not self.request.user or self.request.user.is_anonymous:
-            raise Http404
-        return get_object_or_404(
-            queryset,
-            pk=self.kwargs.get('post_id'),
-            author=self.request.user
-        )
+    url_for_no_access = 'blog:post_detail'
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        context['form'] = PostForm(instance=self.object)
-        return context
+        return super().get_context_data(
+            form=PostForm(instance=self.object), **kwargs,
+        )
 
 
 class CommentCreateView(
-    LoginRequiredMixin, ReverseToPostDetailMixin, CreateView
+    LoginRequiredMixin, ToPostDetailMixin, CreateView,
 ):
     form_class = CommentForm
     template_name = 'blog/comment.html'
 
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            self.post_object = Post.objects.get(pk=self.kwargs.get('post_id'))
-        except Post.DoesNotExist:
-            return render(request, 'pages/404.html', status=404)
-        return super().dispatch(request, *args, **kwargs)
-
     def form_valid(self, form):
         form.instance.author = self.request.user
-        form.instance.post = self.post_object
+        form.instance.post = get_object_or_404(
+            Post,
+            pk=self.kwargs.get('post_id'),
+        )
         return super().form_valid(form)
 
 
 class CommentUpdateView(
-    LoginRequiredMixin, ReverseToPostDetailMixin, UpdateView
+    LoginRequiredMixin, ToPostDetailMixin,
+    AuthorOnlyMixin, UpdateView,
 ):
     model = Comment
     form_class = CommentForm
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
-
-    def dispatch(self, request, *args, **kwargs):
-        self.comment = get_object_or_404(
-            Comment,
-            pk=self.kwargs.get('comment_id')
-        )
-        if (
-            request.user.is_anonymous
-            or not request.user == self.comment.author
-        ):
-            return redirect(
-                'blog:post_detail',
-                post_id=self.kwargs.get('post_id')
-            )
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_object(self, queryset=None):
-        return self.comment
+    url_for_no_access = 'blog:post_detail'
 
 
 class CommentDeleteView(
-    LoginRequiredMixin, ReverseToPostDetailMixin, DeleteView,
+    LoginRequiredMixin, ToPostDetailMixin,
+    AuthorOnlyMixin, DeleteView,
 ):
     model = Comment
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
-
-    def dispatch(self, request, *args, **kwargs):
-        self.comment = get_object_or_404(
-            Comment,
-            pk=self.kwargs.get('comment_id')
-        )
-        if (
-            request.user.is_anonymous
-            or not request.user == self.comment.author
-        ):
-            return redirect(
-                'blog:post_detail',
-                post_id=self.kwargs.get('post_id')
-            )
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_object(self, queryset=None):
-        return self.comment
+    url_for_no_access = 'blog:post_detail'
 
 
-class CategoryDetailView(FilterAnnotateOrderPostsMixin, DetailView):
+class CategoryDetailView(DetailView):
     model = Category
     slug_field = 'slug'
     slug_url_kwarg = 'category_slug'
     template_name = 'blog/category.html'
 
-    def get_queryset(self) -> QuerySet[Any]:
-        return super().get_queryset().filter(is_published=True)
+    def get_object(self):
+        object = super().get_object()
+        if not object.is_published:
+            raise Http404
+        return object
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        context['category'] = self.object
-        context['page_obj'] = Paginator(
-            self.get_filtered_related_posts(
-                context['category'].posts,
-                author_access_flag=False,
-            ),
-            10,
-        ).get_page(
-            self.request.GET.get('page', 1),
+        return super().get_context_data(
+            category=self.object,
+            page_obj=get_related_posts_paginator_page(self),
+            **kwargs,
         )
-        return context
