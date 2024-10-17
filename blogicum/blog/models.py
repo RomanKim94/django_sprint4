@@ -21,7 +21,10 @@ class CreatePublishBaseModel(models.Model):
         abstract = True
 
     def __str__(self):
-        return f' {self.created_at.strftime("%d.%m.%Y %H:%M")}'
+        return (
+            f'{self.created_at.strftime("%d.%m.%Y %H:%M")} '
+            f'{self.is_published=}'
+        )
 
 
 class Category(CreatePublishBaseModel):
@@ -41,8 +44,7 @@ class Category(CreatePublishBaseModel):
         ordering = ('title', )
 
     def __str__(self):
-        category = self.title[:CHAR_LIMIT]
-        return f' {category=}'
+        return f'{self.title[:CHAR_LIMIT]=} ' + super().__str__()
 
 
 class Location(CreatePublishBaseModel):
@@ -54,8 +56,7 @@ class Location(CreatePublishBaseModel):
         ordering = ('name', )
 
     def __str__(self):
-        location = self.name
-        return f' {location=}'
+        return f' {self.name=}' + super().__str__()
 
 
 class Post(CreatePublishBaseModel):
@@ -70,7 +71,7 @@ class Post(CreatePublishBaseModel):
     )
     author = models.ForeignKey(
         User, on_delete=models.CASCADE,
-        verbose_name='Автор публикации',
+        verbose_name='Автор',
         related_name='posts'
     )
     location = models.ForeignKey(
@@ -95,21 +96,29 @@ class Post(CreatePublishBaseModel):
     def __str__(self):
         return (
             f'{self.title[:CHAR_LIMIT]=}, '
-            f'{self.category.title[:CHAR_LIMIT]=}, '
-            f'{self.location.name[:CHAR_LIMIT]=}, '
-            f'{self.author.username=}.'
+            f'{self.category=}, '
+            f'{self.location=}, '
+            f'{self.author=}.'
         )
 
 
 class Comment(models.Model):
-    text = models.TextField('Текст комментария')
+    text = models.TextField('Текст')
     post = models.ForeignKey(
         Post,
         on_delete=models.CASCADE,
         related_name='comments',
+        verbose_name='Публикация'
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    author = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Добавлено',
+    )
+    author = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        verbose_name='Автор'
+    )
 
     class Meta:
         verbose_name = 'комментарий'

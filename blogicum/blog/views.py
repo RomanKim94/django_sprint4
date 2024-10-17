@@ -4,7 +4,6 @@ from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
 from django.db.models.base import Model
-from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -14,7 +13,7 @@ from django.views.generic import (
 
 from .forms import CommentForm, PostForm
 from .mixins import (
-    AuthorOnlyMixin, PostObjectMixin, ProfileOwnerOnlyMixin,
+    AuthorOnlyMixin, PostObjectMixin,
     SetAuthorMixin, ToPostDetailMixin,
 )
 from .models import Category, Comment, Post, User
@@ -25,43 +24,38 @@ POSTS_COUNT_ON_PAGE = 10
 
 def get_filtered_related_posts(
     posts=Post.objects.all(),
-    is_filter_not_published=True,
-    is_select_related=True,
-    is_annotate_count=True,
-    order_by='-pub_date'
+    filter_published_flag=True,
+    select_related_flag=True,
+    annotate_count_flag=True,
 ):
     """
     Function filters, attaches, annotates with comment count and orders
      if necessary.
     """
-    if is_filter_not_published:
+    if filter_published_flag:
         posts = posts.filter(
             is_published=True,
             pub_date__lte=timezone.now(),
             category__is_published=True,
         )
-    if is_select_related:
+    if select_related_flag:
         posts = posts.select_related(
             'author', 'location', 'category',
         )
-    if is_annotate_count:
+    if annotate_count_flag:
         posts = posts.annotate(
             comment_count=Count('comments')
         )
-    posts = posts.order_by(order_by)
-    return posts
+    return posts.order_by(*Post._meta.ordering)
 
 
-def get_related_posts_paginator_page(view, is_filter_not_published=True):
+def get_posts_paginator_page(
+    posts, page, posts_on_page=POSTS_COUNT_ON_PAGE
+):
     return Paginator(
-        get_filtered_related_posts(
-            view.object.posts,
-            is_filter_not_published=is_filter_not_published,
-        ),
-        POSTS_COUNT_ON_PAGE,
-    ).get_page(
-        view.request.GET.get('page', 1),
-    )
+        posts,
+        posts_on_page,
+    ).get_page(page)
 
 
 class UserDetailView(DetailView):
@@ -74,19 +68,18 @@ class UserDetailView(DetailView):
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
             profile=self.object,
-            user=self.request.user,
-            page_obj=get_related_posts_paginator_page(
-                self,
-                is_filter_not_published=not (
-                    self.request.user
-                    and self.object == self.request.user
+            page_obj=get_posts_paginator_page(
+                posts=get_filtered_related_posts(
+                    posts=self.object.posts,
+                    filter_published_flag=self.object != self.request.user,
                 ),
+                page=self.request.GET.get('page', 1),
             ),
             **kwargs,
         )
 
 
-class UserUpdateView(LoginRequiredMixin, ProfileOwnerOnlyMixin, UpdateView):
+class UserUpdateView(LoginRequiredMixin, UpdateView):
     model = User
     template_name = 'blog/user.html'
     slug_field = 'username'
@@ -106,13 +99,12 @@ class PostCreateView(
     PostObjectMixin, CreateView,
 ):
     form_class = PostForm
-    pk_url_kwarg = None
 
     def get_success_url(self):
         return reverse(
-            'blog:profile', kwargs={
-                'username': self.request.user.username,
-            }
+            'blog:profile', args=[
+                self.request.user.username,
+            ]
         )
 
 
@@ -125,23 +117,21 @@ class PostListView(ListView):
 
 class PostDetailView(LoginRequiredMixin, PostObjectMixin, DetailView):
     template_name = 'blog/detail.html'
+    pk_url_kwarg = 'post_id'
 
     def get_object(self) -> Model:
-        post = super().get_object(
-            get_filtered_related_posts(
-                is_filter_not_published=False,
-            )
+        post = super().get_object()
+        if post.author == self.request.user:
+            return post
+        filtered_posts_queryset = get_filtered_related_posts(
+            filter_published_flag=True,
+            select_related_flag=False,
+            annotate_count_flag=False,
         )
-        if (
-            not post.author == self.request.user
-            and not (
-                post.is_published
-                and post.category.is_published
-                and post.pub_date <= timezone.now()
-            )
-        ):
-            raise Http404
-        return post
+        published_post = super().get_object(
+            queryset=filtered_posts_queryset,
+        )
+        return published_post
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
@@ -156,7 +146,7 @@ class PostEditView(
     ToPostDetailMixin, UpdateView,
 ):
     form_class = PostForm
-    url_for_no_access = 'blog:post_detail'
+    pattern_name_for_no_access = 'blog:post_detail'
 
 
 class PostDeleteView(
@@ -164,7 +154,7 @@ class PostDeleteView(
     PostObjectMixin, DeleteView,
 ):
     success_url = reverse_lazy('blog:index')
-    url_for_no_access = 'blog:post_detail'
+    pattern_name_for_no_access = 'blog:post_detail'
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
@@ -182,7 +172,7 @@ class CommentCreateView(
         form.instance.author = self.request.user
         form.instance.post = get_object_or_404(
             Post,
-            pk=self.kwargs.get('post_id'),
+            pk=self.kwargs['post_id'],
         )
         return super().form_valid(form)
 
@@ -195,7 +185,7 @@ class CommentUpdateView(
     form_class = CommentForm
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
-    url_for_no_access = 'blog:post_detail'
+    pattern_name_for_no_access = 'blog:post_detail'
 
 
 class CommentDeleteView(
@@ -205,7 +195,7 @@ class CommentDeleteView(
     model = Comment
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
-    url_for_no_access = 'blog:post_detail'
+    pattern_name_for_no_access = 'blog:post_detail'
 
 
 class CategoryDetailView(DetailView):
@@ -215,14 +205,19 @@ class CategoryDetailView(DetailView):
     template_name = 'blog/category.html'
 
     def get_object(self):
-        object = super().get_object()
-        if not object.is_published:
-            raise Http404
+        object = super().get_object(
+            queryset=Category.objects.filter(is_published=True)
+        )
         return object
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
             category=self.object,
-            page_obj=get_related_posts_paginator_page(self),
+            page_obj=get_posts_paginator_page(
+                posts=get_filtered_related_posts(
+                    posts=self.object.posts
+                ),
+                page=self.request.GET.get('page', 1),
+            ),
             **kwargs,
         )

@@ -1,4 +1,3 @@
-from django.contrib.auth.mixins import UserPassesTestMixin
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.views.generic.detail import SingleObjectMixin
@@ -9,18 +8,13 @@ from .models import Post
 class AuthorOnlyMixin:
 
     def dispatch(self, request, *args, **kwargs):
-        self.obj = self.get_object()
-        if not self.obj.author == request.user:
+        self.object = self.get_object()
+        if not self.object.author == request.user:
             return redirect(
-                self.url_for_no_access,
+                self.pattern_name_for_no_access,
                 post_id=self.kwargs.get('post_id'),
             )
         return super().dispatch(request, *args, **kwargs)
-
-    def get_object(self):
-        if not hasattr(self, 'obj'):
-            self.obj = super().get_object()
-        return self.obj
 
 
 class ToPostDetailMixin:
@@ -28,12 +22,6 @@ class ToPostDetailMixin:
         return reverse(
             'blog:post_detail', args=[self.kwargs.get('post_id')]
         )
-
-
-class ProfileOwnerOnlyMixin(UserPassesTestMixin):
-
-    def test_func(self):
-        return self.get_object() == self.request.user
 
 
 class PostObjectMixin(SingleObjectMixin):

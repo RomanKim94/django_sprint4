@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     'blog.apps.BlogConfig',
     'pages.apps.PagesConfig',
     'debug_toolbar',
-    'django_bootstrap5'
+    'django_bootstrap5',
 ]
 
 MIDDLEWARE = [
