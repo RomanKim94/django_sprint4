@@ -44,7 +44,7 @@ class Category(CreatePublishBaseModel):
         ordering = ('title', )
 
     def __str__(self):
-        return f'{self.title[:CHAR_LIMIT]=} ' + super().__str__()
+        return f'{self.title[:CHAR_LIMIT]=} {super().__str__()}'
 
 
 class Location(CreatePublishBaseModel):
@@ -56,7 +56,7 @@ class Location(CreatePublishBaseModel):
         ordering = ('name', )
 
     def __str__(self):
-        return f' {self.name=}' + super().__str__()
+        return f' {self.name=} {super().__str__()}'
 
 
 class Post(CreatePublishBaseModel):
@@ -72,15 +72,14 @@ class Post(CreatePublishBaseModel):
     author = models.ForeignKey(
         User, on_delete=models.CASCADE,
         verbose_name='Автор',
-        related_name='posts'
     )
     location = models.ForeignKey(
         Location, on_delete=models.SET_NULL, null=True,
-        blank=True, related_name='posts', verbose_name='Местоположение'
+        blank=True, verbose_name='Местоположение'
     )
     category = models.ForeignKey(
         Category, on_delete=models.SET_NULL, null=True,
-        related_name='posts', verbose_name='Категория'
+        verbose_name='Категория'
     )
     image = models.ImageField(
         upload_to='post_image',
@@ -92,6 +91,7 @@ class Post(CreatePublishBaseModel):
         verbose_name = 'публикация'
         verbose_name_plural = 'Публикации'
         ordering = ('-pub_date', )
+        default_related_name = 'posts'
 
     def __str__(self):
         return (
@@ -127,7 +127,7 @@ class Comment(models.Model):
 
     def __str__(self):
         return (
-            f'{self.author.username=} '
+            f'{self.author=} '
             f'{self.created_at=}'
             f'{self.text[:CHAR_LIMIT]=}'
         )

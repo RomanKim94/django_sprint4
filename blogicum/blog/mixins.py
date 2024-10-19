@@ -8,10 +8,10 @@ from .models import Post
 class AuthorOnlyMixin:
 
     def dispatch(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        if not self.object.author == request.user:
+        object = self.get_object()
+        if not object.author == request.user:
             return redirect(
-                self.pattern_name_for_no_access,
+                self.route_for_no_access,
                 post_id=self.kwargs.get('post_id'),
             )
         return super().dispatch(request, *args, **kwargs)

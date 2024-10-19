@@ -24,38 +24,38 @@ POSTS_COUNT_ON_PAGE = 10
 
 def get_filtered_related_posts(
     posts=Post.objects.all(),
-    filter_published_flag=True,
-    select_related_flag=True,
-    annotate_count_flag=True,
+    filter_published=True,
+    select_related=True,
+    annotate_count=True,
 ):
     """
     Function filters, attaches, annotates with comment count and orders
      if necessary.
     """
-    if filter_published_flag:
+    if filter_published:
         posts = posts.filter(
             is_published=True,
             pub_date__lte=timezone.now(),
             category__is_published=True,
         )
-    if select_related_flag:
+    if select_related:
         posts = posts.select_related(
             'author', 'location', 'category',
         )
-    if annotate_count_flag:
+    if annotate_count:
         posts = posts.annotate(
             comment_count=Count('comments')
-        )
-    return posts.order_by(*Post._meta.ordering)
+        ).order_by(*Post._meta.ordering)
+    return posts
 
 
-def get_posts_paginator_page(
-    posts, page, posts_on_page=POSTS_COUNT_ON_PAGE
+def get_paginator_page(
+    queryset, request, objects_on_page=POSTS_COUNT_ON_PAGE
 ):
     return Paginator(
-        posts,
-        posts_on_page,
-    ).get_page(page)
+        queryset,
+        objects_on_page,
+    ).get_page(request.GET.get('page', 1))
 
 
 class UserDetailView(DetailView):
@@ -68,12 +68,12 @@ class UserDetailView(DetailView):
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
             profile=self.object,
-            page_obj=get_posts_paginator_page(
-                posts=get_filtered_related_posts(
+            page_obj=get_paginator_page(
+                queryset=get_filtered_related_posts(
                     posts=self.object.posts,
-                    filter_published_flag=self.object != self.request.user,
+                    filter_published=self.object != self.request.user,
                 ),
-                page=self.request.GET.get('page', 1),
+                request=self.request,
             ),
             **kwargs,
         )
@@ -123,15 +123,12 @@ class PostDetailView(LoginRequiredMixin, PostObjectMixin, DetailView):
         post = super().get_object()
         if post.author == self.request.user:
             return post
-        filtered_posts_queryset = get_filtered_related_posts(
-            filter_published_flag=True,
-            select_related_flag=False,
-            annotate_count_flag=False,
+        return super().get_object(
+            queryset=get_filtered_related_posts(
+                select_related=False,
+                annotate_count=False,
+            ),
         )
-        published_post = super().get_object(
-            queryset=filtered_posts_queryset,
-        )
-        return published_post
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
@@ -146,7 +143,7 @@ class PostEditView(
     ToPostDetailMixin, UpdateView,
 ):
     form_class = PostForm
-    pattern_name_for_no_access = 'blog:post_detail'
+    route_for_no_access = 'blog:post_detail'
 
 
 class PostDeleteView(
@@ -154,7 +151,7 @@ class PostDeleteView(
     PostObjectMixin, DeleteView,
 ):
     success_url = reverse_lazy('blog:index')
-    pattern_name_for_no_access = 'blog:post_detail'
+    route_for_no_access = 'blog:post_detail'
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
@@ -185,7 +182,7 @@ class CommentUpdateView(
     form_class = CommentForm
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
-    pattern_name_for_no_access = 'blog:post_detail'
+    route_for_no_access = 'blog:post_detail'
 
 
 class CommentDeleteView(
@@ -195,7 +192,7 @@ class CommentDeleteView(
     model = Comment
     pk_url_kwarg = 'comment_id'
     template_name = 'blog/comment.html'
-    pattern_name_for_no_access = 'blog:post_detail'
+    route_for_no_access = 'blog:post_detail'
 
 
 class CategoryDetailView(DetailView):
@@ -205,19 +202,18 @@ class CategoryDetailView(DetailView):
     template_name = 'blog/category.html'
 
     def get_object(self):
-        object = super().get_object(
+        return super().get_object(
             queryset=Category.objects.filter(is_published=True)
         )
-        return object
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         return super().get_context_data(
             category=self.object,
-            page_obj=get_posts_paginator_page(
-                posts=get_filtered_related_posts(
+            page_obj=get_paginator_page(
+                queryset=get_filtered_related_posts(
                     posts=self.object.posts
                 ),
-                page=self.request.GET.get('page', 1),
+                request=self.request,
             ),
             **kwargs,
         )
